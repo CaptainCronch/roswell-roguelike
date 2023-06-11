@@ -10,23 +10,21 @@ public class PlayerManager : UdonSharpBehaviour
     public Transform spherePosition;
 
     public LayerMask groundLayers;
-    public float baseWalk = 5f, baseJump = 12f, baseGravity = 0.8f, flySpeed = 15f, sphereRadius = 1f;
+    public float baseWalk = 5f, baseJump = 12f, baseGravity = 0.8f, flySpeed = 15f, sphereRadius = 1f, maxGroundedRise = 1f, maxSlope = 45f;
 
     public VRCPlayerApi player;
 
-    public float maxFly = 3f, maxDelay = 0.2f;
+    public float maxDelay = 0.2f, maxJumpDelay = 0.2f, maxCoyote = 0.2f, maxBuffer = 0.2f;
+    private float delayTimer = 0f, jumpDelayTimer = 0f, coyoteTimer = 0f, bufferTimer = 0f;
 
-    private float flyTimer = 0f, delayTimer = 0f;
-    private bool flying = false;
-    private bool canFly = false;
-    private bool grounded = false;
+    private bool grounded = false, onSlope = false, jumping = false;
 
-    private Vector2 moveDir = new Vector2();
+    private Vector3 moveDir = new Vector3();
     private Vector3 moveVelocity = new Vector3();
+    private RaycastHit hitInfo;
 
     void Start()
     {
-        flyTimer = maxFly;
         player = Networking.LocalPlayer;
         player.SetWalkSpeed(baseWalk);
         //player.SetRunSpeed(baseRun);
@@ -37,65 +35,87 @@ public class PlayerManager : UdonSharpBehaviour
 
     void Update()
     {
-        if (!flying && flyTimer < maxFly)
+        if (jumpDelayTimer < maxJumpDelay)
         {
-            flyTimer += Time.deltaTime;
+            jumpDelayTimer += Time.deltaTime;
         }
-        else if (flying && flyTimer > 0)
-        {
-            Fly();
-        }
-
-        Vector3 debugOffset = new Vector3(0, 2.5f, 0);
     }
 
     void FixedUpdate()
     {
         groundCheck();
+        Jump();
         ApplyMovement();
     }
 
     void ApplyMovement()
     {
         // horizontal
-        moveVelocity.x = (moveDir.normalized * baseWalk).x;
-        moveVelocity.z = (moveDir.normalized * baseWalk).y;
+        moveDir = moveDir.normalized;
+        moveVelocity.x = (moveDir * baseWalk).x;
+        moveVelocity.z = (moveDir * baseWalk).z;
+        
         float playerRotation = Mathf.Deg2Rad * (player.GetRotation().eulerAngles.y);
 
         moveVelocity = new Vector3( // rotates movement towards player direction
             (Mathf.Cos(playerRotation) * moveVelocity.x) + (Mathf.Sin(playerRotation) * moveVelocity.z),
-            0,
+            moveVelocity.y,
             (-Mathf.Sin(playerRotation) * moveVelocity.x) + (Mathf.Cos(playerRotation) * moveVelocity.z)
         );
 
         //vertical
-        moveVelocity.y -= baseGravity;
+        if (!grounded)
+        {
+            moveVelocity.y -= baseGravity;
+        }
+        else if (jumpDelayTimer >= maxJumpDelay) // if on ground and jump safety delay is past due
+        {
+            moveVelocity.y = 0f;
+        }
 
-        player.SetVelocity(moveVelocity);
+        if (onSlope && jumpDelayTimer >= maxJumpDelay)
+        {
+            player.SetVelocity(Vector3.ProjectOnPlane(moveVelocity, hitInfo.normal));
+        }
+        else
+        {
+            player.SetVelocity(moveVelocity);
+        }
     }
 
     void Jump()
     {
-        moveVelocity.y = baseJump;
+        if (jumping && grounded)
+        {
+            moveVelocity.y = baseJump;
+            jumpDelayTimer = 0f;
+        }
     }
 
     void groundCheck()
     {
-        grounded = Physics.CheckSphere(spherePosition.position, sphereRadius, groundLayers);
-    }
+        bool test = Physics.SphereCast(spherePosition.position, sphereRadius, Vector3.down, out hitInfo, sphereRadius, groundLayers);
 
-    void Fly()
-    {
-        //flyTimer -= Time.deltaTime * 2;
-        //player.SetVelocity(new Vector3(0, flySpeed, 0));
+        float angle = Vector3.Angle(transform.up, hitInfo.normal);
+
+        if (test)
+        { // grounded if not moving up too fast, touching ground, and slope not too high
+            if (angle <= maxSlope)
+            {
+                if (moveVelocity.y <= maxGroundedRise)
+                {
+                    grounded = false;
+                }
+            }
+        }
+        Debug.Log(angle);
+
+        onSlope = hitInfo.normal != Vector3.up;
     }
 
     public override void InputJump(bool boolValue, UdonInputEventArgs args)
     {
-        if (boolValue && grounded)
-        {
-            Jump();
-        }
+        jumping = boolValue;
 
         //flying = boolValue;
     }
@@ -107,7 +127,7 @@ public class PlayerManager : UdonSharpBehaviour
 
     public override void InputMoveVertical(float floatValue, UdonInputEventArgs args)
     {
-        moveDir.y = floatValue;
+        moveDir.z = floatValue;
     }
 
     void OnDrawGizmos()
