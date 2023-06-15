@@ -10,10 +10,11 @@ public class PlayerManager : UdonSharpBehaviour
 {
     public Transform spherePosition;
     public Text debugText;
+    public Collider col;
 
     public LayerMask groundLayers;
-    public float baseSpeed = 5f, baseJump = 12f, baseGravity = 0.8f, flySpeed = 15f, sphereRadius = 1f, maxGroundedRise = 1f, maxSlope = 45f, baseAcceleration = 0.2f, airAcceleration = 0f;
-    private float currentSpeed = 0f, currentAcceleration = 0f, maxSpeed;
+    public float baseSpeed = 5f, baseJump = 12f, baseGravity = 0.8f, sphereRadius = 1f, maxGroundedRise = 1f, maxSlope = 45f, baseAcceleration = 0.2f, airAcceleration = 0f;
+    private float currentAcceleration = 0f;
 
     public VRCPlayerApi player;
 
@@ -22,7 +23,7 @@ public class PlayerManager : UdonSharpBehaviour
 
     private bool grounded = false, onSlope = false, jumping = false;
 
-    private Vector3 moveDir = new Vector3();
+    private Vector2 moveDir = new Vector2();
     private Vector3 moveVelocity = new Vector3();
     private RaycastHit hitInfo;
 
@@ -74,45 +75,39 @@ public class PlayerManager : UdonSharpBehaviour
     void ApplyMovement()
     {
         // horizontal
-        // if (moveDir.magnitude > 1f)
-        // {
-        //     moveDir = moveDir.normalized;
-        // }
+        Vector3 targetVelocity = Vector3.zero;
 
-        // if (grounded)
-        // {
-        //     currentAcceleration = baseAcceleration;
-        // }
-        // else
-        // {
-        //     currentAcceleration = airAcceleration;
-        // }
+        if (grounded && jumpDelayTimer >= maxJumpDelay)
+        {
+            currentAcceleration = baseAcceleration;
+        }
+        else
+        {
+            currentAcceleration = airAcceleration;
+        }
+        Debug.Log(currentAcceleration);
 
-        // maxSpeed = baseSpeed * moveDir.magnitude;
+        if (moveDir.magnitude > 1)
+        {
+            moveDir.Normalize();
+        }
 
-        // if (currentSpeed < maxSpeed)
-        // {
-        //     currentSpeed += currentAcceleration;
-        // }
-        // else if (currentSpeed > maxSpeed)
-        // {
-        //     currentSpeed -= currentAcceleration;
-        // }
-        float targetSpeed = moveDir.magnitude * baseSpeed;
-
-
-        moveVelocity.x = (moveDir * baseSpeed).x;
-        moveVelocity.z = (moveDir * baseSpeed).z;
+        targetVelocity.x = (moveDir * baseSpeed).x;
+        targetVelocity.z = (moveDir * baseSpeed).y;
         
         float playerRotation = Mathf.Deg2Rad * (player.GetRotation().eulerAngles.y);
 
-        moveVelocity = new Vector3( // rotates movement towards player direction
-            (Mathf.Cos(playerRotation) * moveVelocity.x) + (Mathf.Sin(playerRotation) * moveVelocity.z),
+        targetVelocity = new Vector3( // rotates movement towards player direction
+            (Mathf.Cos(playerRotation) * targetVelocity.x) + (Mathf.Sin(playerRotation) * targetVelocity.z),
             moveVelocity.y,
-            (-Mathf.Sin(playerRotation) * moveVelocity.x) + (Mathf.Cos(playerRotation) * moveVelocity.z)
+            (-Mathf.Sin(playerRotation) * targetVelocity.x) + (Mathf.Cos(playerRotation) * targetVelocity.z)
         );
 
-        //vertical
+        // Smoothly interpolate the player's velocity towards the target velocity
+        moveVelocity.x = Mathf.Lerp(moveVelocity.x, targetVelocity.x, currentAcceleration * Time.deltaTime);
+        moveVelocity.z = Mathf.Lerp(moveVelocity.z, targetVelocity.z, currentAcceleration * Time.deltaTime);
+
+        // vertical
         if (!grounded)
         {
             moveVelocity.y -= baseGravity;
@@ -122,6 +117,7 @@ public class PlayerManager : UdonSharpBehaviour
             moveVelocity.y = 0f;
         }
 
+        // apply
         if (onSlope && jumpDelayTimer >= maxJumpDelay)
         {
             player.SetVelocity(Vector3.ProjectOnPlane(moveVelocity, hitInfo.normal));
@@ -161,6 +157,15 @@ public class PlayerManager : UdonSharpBehaviour
         onSlope = hitInfo.normal != Vector3.up;
     }
 
+    public void Explode(Vector3 position, float distance, float strength, float radius)
+    {
+        Vector3 offset = new Vector3(0, 0, 0);
+        if (distance > radius) {return;}
+        Vector3 direction = (col.transform.position - position).normalized;
+        moveVelocity += Mathf.InverseLerp(radius, 0f, distance) * strength * direction;
+        jumpDelayTimer = 0f;
+    }
+
     public override void InputJump(bool boolValue, UdonInputEventArgs args)
     {
         jumping = boolValue;
@@ -169,8 +174,6 @@ public class PlayerManager : UdonSharpBehaviour
         {
             bufferTimer = 0f;
         }
-
-        //flying = boolValue;
     }
 
     public override void InputMoveHorizontal(float floatValue, UdonInputEventArgs args)
@@ -180,22 +183,6 @@ public class PlayerManager : UdonSharpBehaviour
 
     public override void InputMoveVertical(float floatValue, UdonInputEventArgs args)
     {
-        moveDir.z = floatValue;
+        moveDir.y = floatValue;
     }
-
-    // void OnDrawGizmos()
-    // {
-    //     if (grounded)
-    //     {
-    //         Gizmos.color = Color.green;
-    //         Debug.Log("green");
-    //     }
-    //     else
-    //     {
-    //         Gizmos.color = Color.red;
-    //         Debug.Log("red");
-    //     }
-        
-    //     Gizmos.DrawSphere(spherePosition.position - new Vector3(0, sphereRadius, 0), sphereRadius);
-    // }
 }

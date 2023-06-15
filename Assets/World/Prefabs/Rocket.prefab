@@ -125,7 +125,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   serializationData:
-    SerializedFormat: 2
+    SerializedFormat: 0
     SerializedBytes: 
     ReferencedUnityObjects: []
     SerializedBytesString: 
@@ -136,7 +136,12 @@ MonoBehaviour:
   _udonSharpBackingUdonBehaviour: {fileID: 6208655312956211701}
   explosion: {fileID: 100006, guid: e076683e0305e35498b8e8834978c0fa, type: 3}
   speed: 25
+  strength: 20
+  radius: 2
   despawnTime: 5
+  layers:
+    serializedVersion: 2
+    m_Bits: 16777216
 --- !u!114 &6208655312956211701
 MonoBehaviour:
   m_ObjectHideFlags: 0
