@@ -13,7 +13,8 @@ public class PlayerManager : UdonSharpBehaviour
     public Collider col;
 
     public LayerMask groundLayers;
-    public float baseSpeed = 5f, baseJump = 12f, baseGravity = 0.8f, sphereRadius = 1f, maxGroundedRise = 1f, maxSlope = 45f, baseAcceleration = 0.2f, airAcceleration = 0f;
+    public float baseSpeed = 5f, baseJump = 12f, baseGravity = 0.8f, sphereRadius = 1f, maxGroundedRise = 1f;
+    public float maxSlope = 45f, baseAcceleration = 0.2f, maxAirSpeed = 10f, airStrafeForce = 2f;
     private float currentAcceleration = 0f;
 
     public VRCPlayerApi player;
@@ -52,7 +53,7 @@ public class PlayerManager : UdonSharpBehaviour
             bufferTimer += Time.deltaTime;
         }
 
-        debugText.text = "jumpDelayTimer: " + jumpDelayTimer.ToString();
+        debugText.text = Mathf.Floor(new Vector3(moveVelocity.x, 0, moveVelocity.z).magnitude).ToString() + " m/s";
 
         if (onSlope && jumpDelayTimer >= maxJumpDelay)
         {
@@ -77,14 +78,6 @@ public class PlayerManager : UdonSharpBehaviour
         // horizontal
         Vector3 targetVelocity = Vector3.zero;
 
-        if (grounded && jumpDelayTimer >= maxJumpDelay)
-        {
-            currentAcceleration = baseAcceleration;
-        }
-        else
-        {
-            currentAcceleration = airAcceleration;
-        }
         Debug.Log(currentAcceleration);
 
         if (moveDir.magnitude > 1)
@@ -103,9 +96,16 @@ public class PlayerManager : UdonSharpBehaviour
             (-Mathf.Sin(playerRotation) * targetVelocity.x) + (Mathf.Cos(playerRotation) * targetVelocity.z)
         );
 
-        // Smoothly interpolate the player's velocity towards the target velocity
-        moveVelocity.x = Mathf.Lerp(moveVelocity.x, targetVelocity.x, currentAcceleration * Time.deltaTime);
-        moveVelocity.z = Mathf.Lerp(moveVelocity.z, targetVelocity.z, currentAcceleration * Time.deltaTime);
+        if (grounded && jumpDelayTimer >= maxJumpDelay)
+        {
+            // Smoothly interpolate the player's velocity towards the target velocity
+            moveVelocity.x = Mathf.Lerp(moveVelocity.x, targetVelocity.x, baseAcceleration * Time.deltaTime);
+            moveVelocity.z = Mathf.Lerp(moveVelocity.z, targetVelocity.z, baseAcceleration * Time.deltaTime);
+        }
+        else
+        {
+            AirMovement(targetVelocity);
+        }
 
         // vertical
         if (!grounded)
@@ -125,6 +125,37 @@ public class PlayerManager : UdonSharpBehaviour
         else
         {
             player.SetVelocity(moveVelocity);
+        }
+    }
+
+    void AirMovement(Vector3 vector3)
+    {
+        Vector3 horVelocity = new Vector3(moveVelocity.x, 0, moveVelocity.z);
+        // project the velocity onto the movevector
+        Vector3 projVel = Vector3.Project(horVelocity, vector3);
+
+        // check if the movevector is moving towards or away from the projected velocity
+        bool isAway = Vector3.Dot(vector3, projVel) <= 0f;
+
+        // only apply force if moving away from velocity or velocity is below MaxAirSpeed
+        if (projVel.magnitude < maxAirSpeed || isAway)
+        {
+            // calculate the ideal movement force
+            Vector3 vc = vector3.normalized * airStrafeForce;
+
+            // cap it if it would accelerate beyond MaxAirSpeed directly.
+            if (!isAway)
+            {
+                vc = Vector3.ClampMagnitude(vc, maxAirSpeed - projVel.magnitude);
+            }
+            else
+            {
+                vc = Vector3.ClampMagnitude(vc, maxAirSpeed + projVel.magnitude);
+            }
+
+            // Apply the force
+            moveVelocity.z += vc.z;
+            moveVelocity.x += vc.x;
         }
     }
 
